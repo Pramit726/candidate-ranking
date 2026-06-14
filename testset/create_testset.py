@@ -26,10 +26,13 @@ substituted in.
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -115,7 +118,7 @@ Score 2 — Standard engineering profile, no strong signals either way.
 
 Score 1 — Architecture or management-heavy role, limited recent
           coding, or located outside India but willing to relocate.
-
+          
 Score 0 (Hard Reject) — Any of:
   - Pure academic or research-only career
   - Entire career at consulting/services firms only
@@ -208,21 +211,7 @@ Return ONLY valid JSON. No markdown. No code fences. No extra text.
 
 [Data]
 
-### JOB DESCRIPTION
-Role: Senior AI Engineer — Founding Team
-Company: Redrob AI (Series A startup)
-Location: Pune/Noida, India (Hybrid). Open to Tier-1 India relocation.
-          No visa sponsorship.
-Experience: 5-9 years
-Mandate: Own the search, ranking, and matching layer. Must have
-         hands-on production experience with embedding-based
-         retrieval, vector databases, Python, and evaluation
-         frameworks (NDCG, MAP).
-Dealbreakers: Pure academics, LangChain-only under 12 months,
-              no production code in 18 months, job-hopping,
-              IT services-only background, CV/Speech-only ML.
-              Notice > 30 days is a concern. No recruiter response
-              is an instant rejection.
+{job_description}
 
 ### CANDIDATE JSON
 {candidate_json}
@@ -457,16 +446,25 @@ def load_candidates(path: str) -> List[Dict[str, Any]]:
     raise ValueError("Input file must be a JSON object or a list of JSON objects.")
 
 
+def load_job_description(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
 def score_candidate(
     provider: BaseProvider,
     candidate: Dict[str, Any],
+    job_description: str,
     max_retries: int = 3,
     retry_delay: float = 2.0,
 ) -> Dict[str, Any]:
     """Run one candidate through the model, with retries and validation."""
 
     candidate_json_str = json.dumps(candidate, indent=2)
-    user_prompt = USER_PROMPT_TEMPLATE.format(candidate_json=candidate_json_str)
+    user_prompt = USER_PROMPT_TEMPLATE.format(
+        job_description=job_description,
+        candidate_json=candidate_json_str,
+    )
 
     last_error = None
     for attempt in range(1, max_retries + 1):
@@ -514,6 +512,9 @@ def score_candidate(
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     parser = argparse.ArgumentParser(
         description="Golden set generation pipeline for Redrob AI candidate scoring."
     )
@@ -532,6 +533,11 @@ def main():
         "--input",
         required=True,
         help="Path to input JSON file: a single candidate object or a list of candidate objects.",
+    )
+    parser.add_argument(
+        "--job-description",
+        required=True,
+        help="Path to text file containing the job description.",
     )
     parser.add_argument(
         "--output",
@@ -559,6 +565,15 @@ def main():
 
     args = parser.parse_args()
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = Path(args.output)
+    if output_path.suffix:
+        output_path = output_path.with_name(
+            f"{output_path.stem}_{timestamp}{output_path.suffix}"
+        )
+    else:
+        output_path = output_path / f"golden_set_{timestamp}.jsonl"
+
     provider_cls = PROVIDERS[args.provider]
     provider_kwargs = {}
     if args.model:
@@ -567,20 +582,22 @@ def main():
     try:
         provider = provider_cls(**provider_kwargs)
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        logging.error("%s", e)
         sys.exit(1)
 
     candidates = load_candidates(args.input)
+    job_description = load_job_description(args.job_description)
     if args.limit:
         candidates = candidates[: args.limit]
 
-    print(f"Provider: {provider.name} | Model: {provider.model}")
-    print(f"Loaded {len(candidates)} candidate(s) from {args.input}")
-    print(f"Writing results to {args.output}")
+    logging.info("Provider: %s | Model: %s", provider.name, provider.model)
+    logging.info("Loaded %d candidate(s) from %s", len(candidates), args.input)
+    logging.info("Loaded job description from %s", args.job_description)
+    logging.info("Writing results to %s", output_path)
 
     n_ok, n_issues, n_failed = 0, 0, 0
 
-    with open(args.output, "w") as out_f:
+    with open(output_path, "w", encoding="utf-8") as out_f:
         for i, candidate in enumerate(candidates, start=1):
             cid = (
                 candidate.get("candidate_id")
@@ -588,25 +605,27 @@ def main():
                 or candidate.get("id")
                 or f"row_{i}"
             )
-            print(
-                f"[{i}/{len(candidates)}] Scoring candidate: {cid} ...",
-                end=" ",
-                flush=True,
-            )
+            logging.info("[%d/%d] Scoring candidate: %s", i, len(candidates), cid)
 
-            result = score_candidate(provider, candidate, max_retries=args.max_retries)
+            result = score_candidate(
+                provider,
+                candidate,
+                job_description,
+                max_retries=args.max_retries,
+            )
 
             if result["parsed"] is None:
                 n_failed += 1
-                print("FAILED")
+                logging.error("FAILED")
             elif result["validation_issues"]:
                 n_issues += 1
-                print(
-                    f"OK (with {len(result['validation_issues'])} validation issue(s))"
+                logging.warning(
+                    "OK (with %d validation issue(s))",
+                    len(result["validation_issues"]),
                 )
             else:
                 n_ok += 1
-                print("OK")
+                logging.info("OK")
 
             out_f.write(json.dumps(result) + "\n")
             out_f.flush()
@@ -614,11 +633,11 @@ def main():
             if i < len(candidates):
                 time.sleep(args.sleep)
 
-    print("\n--- Summary ---")
-    print(f"Clean:        {n_ok}")
-    print(f"With issues:  {n_issues}")
-    print(f"Failed:       {n_failed}")
-    print(f"Total:        {len(candidates)}")
+    logging.info("--- Summary ---")
+    logging.info("Clean:        %d", n_ok)
+    logging.info("With issues:  %d", n_issues)
+    logging.info("Failed:       %d", n_failed)
+    logging.info("Total:        %d", len(candidates))
 
 
 if __name__ == "__main__":
