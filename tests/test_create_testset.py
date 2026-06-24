@@ -9,41 +9,22 @@ Reference date for activity calculations: 2026-06-14
 
 Usage:
     export GEMINI_API_KEY=...   # or GROQ_API_KEY
-    pytest test_golden_set_pipeline.py --provider gemini -v
-    pytest test_golden_set_pipeline.py --provider groq -v
+    pytest tests/create_testset.py --provider gemini -v
+    pytest tests/create_testset.py --provider groq -v
 """
 
 import json
 import os
 
 import pytest
-from golden_set_pipeline import (
+
+from testset.create_testset import (
     PROVIDERS,
     REQUIRED_FIELDS,
     extract_json,
     score_candidate,
     validate_output,
 )
-
-# ---------------------------------------------------------------------------
-# pytest CLI options
-# ---------------------------------------------------------------------------
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--provider",
-        action="store",
-        default="gemini",
-        choices=list(PROVIDERS.keys()),
-        help="Which LLM provider to use for live scoring tests.",
-    )
-    parser.addoption(
-        "--model",
-        action="store",
-        default=None,
-        help="Override model name for the chosen provider.",
-    )
 
 
 @pytest.fixture(scope="session")
@@ -459,9 +440,9 @@ TC04 = {
 
 TC04_EXPECTED = {
     "Tech_Fit": 4,
-    "Context_Fit": 0,  # entire career at TCS + Infosys only
+    "Context_Fit": 0,  # entire career at TCS + Infosys only → hard reject
     "Behavior_Fit": 4,
-    "Final_Score_NDCG": 1,  # veto fires on Context=0
+    "Final_Score_NDCG": 0,  # ctx==0 → tier 0 (hard reject, not veto-to-1)
     "Binary_Label_MAP": 0,
 }
 
@@ -540,7 +521,7 @@ TC05_EXPECTED = {
     "Tech_Fit": 3,
     "Context_Fit": 1,  # architecture role, no production code 18+ months, outside India
     "Behavior_Fit": 1,  # notice >90, inactive 4+ months, low response rate
-    "Final_Score_NDCG": 1,  # veto fires (Context=1)
+    "Final_Score_NDCG": 2,  # round(3×0.5+1×0.3+1×0.2)=round(2.0)=2; no hard reject
     "Binary_Label_MAP": 0,
 }
 
@@ -613,9 +594,9 @@ TC06 = {
 TC06_EXPECTED = {
     "Tech_Fit": 3,
     "Context_Fit": 3,
-    "Behavior_Fit": 1,  # notice >90 days is sufficient trigger
-    "Final_Score_NDCG": 1,  # veto fires
-    "Binary_Label_MAP": 0,
+    "Behavior_Fit": 1,  # notice >90, inactive ~5 months, low response rate
+    "Final_Score_NDCG": 3,  # round(3×0.5+3×0.3+1×0.2)=round(2.6)=3; beh=1 not 0 so no cap
+    "Binary_Label_MAP": 1,
 }
 
 # ---------------------------------------------------------------------------
@@ -1022,9 +1003,9 @@ TC13 = {
 
 TC13_EXPECTED = {
     "Tech_Fit": 2,
-    "Context_Fit": 0,  # average tenure ~14 months across 4 jobs < 18 months
+    "Context_Fit": 0,  # average tenure ~14 months across 4 jobs < 18 months → hard reject
     "Behavior_Fit": 4,
-    "Final_Score_NDCG": 1,  # veto fires on Context=0
+    "Final_Score_NDCG": 0,  # ctx==0 → tier 0 (hard reject)
     "Binary_Label_MAP": 0,
 }
 
@@ -1113,9 +1094,9 @@ TC14 = {
 
 TC14_EXPECTED = {
     "Tech_Fit": 2,  # research NDCG ≠ production NDCG evaluation; no deployment
-    "Context_Fit": 0,  # pure academic career, zero production
+    "Context_Fit": 0,  # pure academic career, zero production → hard reject
     "Behavior_Fit": 3,
-    "Final_Score_NDCG": 1,  # veto fires on Context=0
+    "Final_Score_NDCG": 0,  # ctx==0 → tier 0 (hard reject)
     "Binary_Label_MAP": 0,
 }
 
@@ -1364,9 +1345,11 @@ TC19 = {
 }
 
 TC19_EXPECTED = {
-    # Missing evidence rule: treat absent signals as worst case for behavior
-    "Behavior_Fit": 1,  # no active date + no response rate = conservative score
-    "Final_Score_NDCG": 1,  # veto fires (Behavior=1)
+    # None signals treated as worst-case: last_active=None → inactive 6+ months,
+    # response_rate=None → 0.0; both produce Behavior_Fit=0.
+    # beh==0 caps Final at min(weighted,1)=1.
+    "Behavior_Fit": 0,
+    "Final_Score_NDCG": 1,
     "Binary_Label_MAP": 0,
 }
 
@@ -1397,7 +1380,6 @@ VETO_CASES = [
     pytest.param(TC03, TC03_EXPECTED, id="TC-03-behavior-zero"),
     pytest.param(TC04, TC04_EXPECTED, id="TC-04-context-zero"),
     pytest.param(TC05, TC05_EXPECTED, id="TC-05-context-one"),
-    pytest.param(TC06, TC06_EXPECTED, id="TC-06-behavior-one"),
     pytest.param(TC13, TC13_EXPECTED, id="TC-13-job-hopper"),
     pytest.param(TC14, TC14_EXPECTED, id="TC-14-pure-academic"),
 ]
@@ -1495,17 +1477,34 @@ def test_score_correctness(provider, candidate, expected):
 
 @pytest.mark.parametrize("candidate,expected", VETO_CASES)
 def test_veto_fires_correctly(provider, candidate, expected):
-    """Final_Score_NDCG must be 1 whenever Context or Behavior <= 1."""
+    """Final_Score_NDCG must match the new formula for low Context/Behavior cases:
+    - ctx == 0 (hard reject)  → Final must be 0
+    - beh == 0 (unreachable)  → Final must be capped at 1
+    - ctx == 1 or beh == 1    → no hard rule; weighted formula applies normally
+    """
     result = score_candidate(provider, candidate, max_retries=3)
     assert_structurally_valid(result)
     parsed = result["parsed"]
-    if parsed["Context_Fit"] <= 1 or parsed["Behavior_Fit"] <= 1:
-        assert parsed["Final_Score_NDCG"] == 1, (
-            f"Veto did not fire. Context={parsed['Context_Fit']}, "
-            f"Behavior={parsed['Behavior_Fit']}, "
-            f"Final={parsed['Final_Score_NDCG']}"
+
+    if parsed["Context_Fit"] == 0:
+        assert parsed["Final_Score_NDCG"] == 0, (
+            f"Context hard-reject (ctx=0) must yield Final=0. "
+            f"Got Final={parsed['Final_Score_NDCG']}"
         )
-    assert parsed["Binary_Label_MAP"] == 0
+        assert parsed["Binary_Label_MAP"] == 0
+    elif parsed["Behavior_Fit"] == 0:
+        assert parsed["Final_Score_NDCG"] <= 1, (
+            f"Behavioral unreachability (beh=0) must cap Final at 1. "
+            f"Got Final={parsed['Final_Score_NDCG']}"
+        )
+        assert parsed["Binary_Label_MAP"] == 0
+    else:
+        # ctx=1 or beh=1 — weighted formula applies; just confirm expected final
+        assert parsed["Final_Score_NDCG"] == expected["Final_Score_NDCG"], (
+            f"Final_Score_NDCG: expected {expected['Final_Score_NDCG']}, "
+            f"got {parsed['Final_Score_NDCG']} "
+            f"(ctx={parsed['Context_Fit']}, beh={parsed['Behavior_Fit']})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1583,8 +1582,10 @@ def test_tc14_tech_reasoning_no_production_inference(provider):
 def test_tc15_context_not_zero_for_mixed_career(provider):
     """TC-15: Partial services background must not trigger Context=0 hard reject."""
     result = score_candidate(provider, TC15, max_retries=3)
+    # print(f"TC-15 result: {result}")
     assert_structurally_valid(result)
     parsed = result["parsed"]
+    # print(f"TC-15 parsed: {parsed}")
     assert parsed["Context_Fit"] >= 2, (
         f"Candidate with 4 years at product companies post-Accenture "
         f"should not receive Context_Fit < 2. Got {parsed['Context_Fit']}. "
@@ -1603,12 +1604,13 @@ def test_tc18_open_to_work_false_caps_behavior(provider):
 
 
 def test_tc19_missing_fields_scored_conservatively(provider):
-    """TC-19: Missing last_active_date and response_rate must not yield Behavior >= 2."""
+    """TC-19: None last_active_date and None response_rate must be treated as
+    worst-case, producing Behavior_Fit=0 (inactive 6+ months equivalent)."""
     result = score_candidate(provider, TC19, max_retries=3)
     assert_structurally_valid(result)
     parsed = result["parsed"]
-    assert parsed["Behavior_Fit"] <= 1, (
-        f"Missing behavior signals should yield conservative Behavior_Fit <= 1. "
+    assert parsed["Behavior_Fit"] == 0, (
+        f"None behavior signals must produce Behavior_Fit=0 (worst-case). "
         f"Got {parsed['Behavior_Fit']}. Reasoning: {parsed.get('Behavior_Reasoning')}"
     )
 
@@ -1622,9 +1624,10 @@ def test_tc10_weighted_formula_final_score(provider):
     """
     TC-10: Tech=4, Context=3, Behavior=2
     Weighted = (4×0.5)+(3×0.3)+(2×0.2) = 3.3 → 3
-    Veto does NOT fire. Final must be 3, MAP=1.
+    ctx > 0 and beh > 0, so weighted formula applies directly. Final must be 3, MAP=1.
     """
     result = score_candidate(provider, TC10, max_retries=3)
+    # print(f"TC-10 result: {result}")
     assert_structurally_valid(result)
     parsed = result["parsed"]
     assert parsed["Final_Score_NDCG"] == 3, (
@@ -1682,10 +1685,10 @@ def test_validate_output_flags_veto_violation():
         "Tech_Fit": 4,
         "Tech_Reasoning": "x",
         "Context_Fit": 0,
-        "Context_Reasoning": "x",  # veto trigger
+        "Context_Reasoning": "x",  # hard-reject trigger
         "Behavior_Fit": 4,
         "Behavior_Reasoning": "x",
-        "Final_Score_NDCG": 3,  # wrong — should be 1
+        "Final_Score_NDCG": 3,  # wrong — ctx==0 requires Final=0
         "Binary_Label_MAP": 1,
         "Profile_Strength_Score": 50,
     }
@@ -1711,19 +1714,18 @@ def test_validate_output_flags_binary_mismatch():
 
 
 def test_validate_output_flags_profile_strength_out_of_range():
-    parsed = {
-        "Candidate_ID": "CAND_0000001",
+    # Profile_Strength_Score range is enforced at the LLM-output validation stage.
+    # validate_llm_output (called inside score_candidate) catches values outside [0,100].
+    from testset.create_testset import validate_llm_output
+
+    llm_output = {
         "Tech_Fit": 3,
         "Tech_Reasoning": "x",
         "Context_Fit": 3,
         "Context_Reasoning": "x",
-        "Behavior_Fit": 3,
-        "Behavior_Reasoning": "x",
-        "Final_Score_NDCG": 3,
-        "Binary_Label_MAP": 1,
         "Profile_Strength_Score": 150,  # out of range
     }
-    issues = validate_output(parsed)
+    issues = validate_llm_output(llm_output)
     assert any("Profile_Strength_Score" in i for i in issues)
 
 
