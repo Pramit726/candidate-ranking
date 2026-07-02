@@ -6,6 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
+
 def save_csv_output(
     ranked_df: pd.DataFrame,
     reasonings: list,
@@ -15,7 +16,7 @@ def save_csv_output(
 ):
     """Write final CSV with candidate_id, rank, score (0–1 normalised), reasoning."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    out = ranked_df.head(top_n).copy().reset_index(drop=True)
+    out = ranked_df.copy().reset_index(drop=True)
 
     # Normalise score to [0, 1]
     if score_col in out.columns:
@@ -31,6 +32,15 @@ def save_csv_output(
         n = len(out)
         out["score"] = ((n - np.arange(n)) / n).round(4)
 
+    # sort by score desc, then candidate_id asc
+    if "candidate_id" in out.columns:
+        out = out.sort_values(
+            by=["score", "candidate_id"], ascending=[False, True]
+        ).reset_index(drop=True)
+    else:
+        out = out.sort_values(by=["score"], ascending=[False]).reset_index(drop=True)
+
+    out = out.head(top_n).copy().reset_index(drop=True)
     out["rank"] = range(1, len(out) + 1)
     out["reasoning"] = reasonings[: len(out)]
 

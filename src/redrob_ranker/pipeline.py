@@ -9,6 +9,7 @@ come from the package modules.
 import argparse
 import os
 import sys
+import time
 
 from .config import (
     DEFAULT_AS_OF_DATE,
@@ -55,6 +56,7 @@ def parse_args():
 
 
 def main():
+    start_time = time.perf_counter()
     args = parse_args()
 
     print("\n" + "=" * 60)
@@ -304,6 +306,10 @@ def main():
         root, ext = os.path.splitext(output_path)
         output_path = f"{root}_test{ext}"
 
+    best_df = best_df.sort_values(
+        by=[score_col, "candidate_id"],
+        ascending=[False, True],
+    ).reset_index(drop=True)
     save_csv_output(
         best_df,
         reasonings,
@@ -313,3 +319,6 @@ def main():
     )
 
     print(f"\n[*] Done. Ranking strategy: {best_name}\n")
+    elapsed = time.perf_counter() - start_time
+
+    print(f"[*] Total runtime: {elapsed:.2f} seconds")

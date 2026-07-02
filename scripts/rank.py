@@ -19,10 +19,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
 )
 
-from redrob_ranker.pipeline import main  # noqa: E402
+from redrob_ranker.pipeline import main
 
 if __name__ == "__main__":
-    start_time = os.times()
     main()
-    end_time = os.times()
-    print("[*] Total runtime: %.2f seconds" % (end_time.elapsed - start_time.elapsed))
