@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Models & artifacts (regenerated at runtime)
+models/
+artifacts/
+*.gguf
+
+# OS
+.DS_Store
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Large raw candidate pools (regenerate/download separately — see data/README.md)
+data/candidates.jsonl
+data/candidates_excluding_sample.jsonl
+data/final_candidates_12yoe.jsonl
+data/final_candidates_15yoe.jsonl

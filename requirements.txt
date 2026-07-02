@@ -1,0 +1,25 @@
+# ── Core / utility ──────────────────────────────────────────────────────────
+requests==2.34.2
+joblib==1.5.3
+numpy==2.2.6
+pandas==2.3.3
+
+# ── Notebook runner ─────────────────────────────────────────────────────────
+jupyter==1.1.1
+nbformat==5.10.4
+
+# ── ML / data ────────────────────────────────────────────────────────────────
+scikit-learn==1.7.2
+xgboost==3.2.0
+
+# ── Embeddings, NLI, and local LLM scoring (Approaches 2-4) ────────────────
+sentence-transformers==5.5.1
+transformers==4.57.6
+torch==2.7.1
+llama-cpp-python==0.3.32
+
+# ── Job description / document parsing (job_description.docx loader) ───────
+python-docx==1.2.0
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest==9.1.1
