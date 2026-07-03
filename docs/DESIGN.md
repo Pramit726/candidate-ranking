@@ -247,14 +247,15 @@ functions and every constant are byte-identical to the original:
 ## 6. Evaluation Results (test set, 120 candidates)
 
 | Metric | Lex Sort | Weighted Nonlinear | LambdaMART |
-|---|---|---|---|
-| NDCG@10 | 0.8440 | **0.9483** | — |
-| NDCG@50 | 0.8629 | **0.9125** | — |
-| NDCG@all | 0.9463 | **0.9751** | — |
-| MAP | 0.6389 | **0.8056** | — |
-| P@10 | 0.3000 | 0.3000 | — |
-| Spearman ρ | 0.2278 | **0.3528** | — |
-| **Composite** | 0.7917 | **0.8837** | — |
+|---|---:|---:|---:|
+| NDCG@10 | 0.9351 | **0.9351** | 0.6505 |
+| NDCG@50 | 0.9654 | **0.9654** | 0.8547 |
+| NDCG@all | **0.9804** | 0.9799 | 0.8547 |
+| MAP | **0.8095** | **0.8095** | 0.0909 |
+| P@10 | **0.3000** | **0.3000** | 0.0000 |
+| P@20 | **0.1500** | **0.1500** | 0.0500 |
+| Spearman ρ | **0.7303** | 0.7039 | -0.0769 |
+| **Composite Score** | **0.8936** | **0.8936** | 0.5953 |
 
 *LambdaMART is evaluated on its 20% held-out split only (24 candidates), which is too small for a meaningful table entry alongside the full-pool strategies.*
 

@@ -1,14 +1,19 @@
 ---
-title: Redrob — Evidence-Grounded Candidate Ranker
-emoji: 🎯
-colorFrom: blue
-colorTo: indigo
-sdk: streamlit
-app_file: app/streamlit_app.py
+title: Figuring-out-candidate Ranking
+emoji: 🚀
+colorFrom: red
+colorTo: red
+sdk: docker
+app_port: 7860
+tags:
+- streamlit
 pinned: false
-short_description: A transparent, reproducible, CPU-only candidate ranking system that scores every candidate on three independent axes, ranks them with interchangeable strategies, and emits a grounded one-sentence reason per candidate.
+short_description: Streamlit template space
+license: mit
 ---
----
+
+App Demo: [https://pramitde726-figuring-out-candidate-ranking.hf.space/](https://pramitde726-figuring-out-candidate-ranking.hf.space/)
+
 # Redrob — Evidence-Grounded Candidate Ranker
 
 Top-100 candidate ranking for the Redrob **Intelligent Candidate Discovery &

@@ -23,9 +23,9 @@ Three approaches were implemented and compared:
 
 | Approach | Dataset used | Accuracy | Notes |
 |---|---|---|---|
-| **A2: XGBoost + `all-MiniLM-L6-v2`** | Full 800 records | ~72% (random emb) | Trained model, deterministic |
-| A3: Zero-Shot NLI (`bart-large-mnli`) | 100-sample subset | ~50% | No training, slow, 100 samples only |
-| A4: Local SLM (Qwen3-4B) | 100-sample subset | — | Buggy (thinking-block truncation), slowest |
+| **A2: XGBoost + `all-MiniLM-L6-v2`** | Full 800 records | ~98% (random emb) | Trained model, deterministic |
+| A3: Zero-Shot NLI (`bart-large-mnli`) | 100-sample subset | ~65% | No training, slow, 100 samples only |
+| A4: Local SLM (Qwen3-4B) | 100-sample subset | 30% | Buggy (thinking-block truncation), slowest |
 
 **Rejected: Zero-Shot NLI.** The hypothesis labels fed to `facebook/bart-large-mnli` have to describe abstract scoring tiers ("This candidate has built a production retrieval system"). NLI models are trained on entailment pairs, not abstract rubric classification — accuracy was mediocre and the approach is limited to 100 samples with no path to scaling.
 
