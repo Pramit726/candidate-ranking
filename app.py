@@ -1,11 +1,8 @@
 """
 app.py — FiguringOut · Redrob AI Candidate Ranker
-Streamlit demo inspired by Team-Trinetra's layout.
-
-Run:
-    streamlit run app.py
 """
 
+import base64
 import io
 import json
 import os
@@ -50,140 +47,466 @@ from redrob_ranker.scoring import (
 )
 
 # =============================================================================
+# LOGO HELPER
+# =============================================================================
+
+
+def get_logo_b64() -> str:
+    """Return base64-encoded logo.png, or empty string if not found."""
+    logo_path = ROOT / "narrow.png"
+    if logo_path.exists():
+        return base64.b64encode(logo_path.read_bytes()).decode()
+    return ""
+
+
+LOGO_B64 = get_logo_b64()
+
+
+def logo_img_tag(size: int = 48) -> str:
+    if LOGO_B64:
+        return (
+            f'<img src="data:image/png;base64,{LOGO_B64}" '
+            f'width="{size}" height="{size}" style="border-radius:8px;object-fit:contain;" />'
+        )
+    return '<span style="font-size:2rem;">🎯</span>'
+
+
+WIDE_LOGO_B64 = get_logo_b64()  # reuse same fn; swap file below if different name
+
+
+def _load_b64(filename: str) -> str:
+    p = ROOT / filename
+    return base64.b64encode(p.read_bytes()).decode() if p.exists() else ""
+
+
+WIDE_LOGO_B64 = _load_b64("wide.png")  # wide horizontal logo
+
+
+def wide_logo_tag(height: int = 48) -> str:
+    if WIDE_LOGO_B64:
+        return (
+            f'<img src="data:image/png;base64,{WIDE_LOGO_B64}" '
+            f'height="{height}" '
+            f'style="width:auto;max-width:220px;object-fit:contain;'
+            f'background:#fff;border-radius:10px;padding:6px 10px;" />'
+        )
+    return '<span style="font-size:2rem;">🎯</span>'
+
+
+# =============================================================================
 # PAGE CONFIG
 # =============================================================================
 
+_icon = ROOT / "wide.png"
 st.set_page_config(
     page_title="FiguringOut · Redrob Ranker",
-    page_icon="🎯",
+    page_icon=str(_icon) if _icon.exists() else "🎯",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# Streamlit 1.35+ sidebar logo
+if LOGO_B64:
+    try:
+        st.logo(str(ROOT / "narrow.png"), size="large")
+    except Exception:
+        pass
+
 # =============================================================================
-# CUSTOM CSS  (inspired by Trinetra's purple/dark theme)
+# DESIGN TOKENS & GLOBAL CSS
 # =============================================================================
 
 st.markdown(
     """
 <style>
-/* Main header bar */
-.main-header {
-    background: linear-gradient(135deg, #1a0533 0%, #2d1060 50%, #1a0533 100%);
-    padding: 1.4rem 2rem;
-    border-radius: 12px;
-    margin-bottom: 1.5rem;
-    border: 1px solid #7D45E0;
-}
-.main-header h1 {
-    color: #ffffff;
-    font-size: 1.9rem;
-    font-weight: 800;
-    margin: 0;
-    letter-spacing: -0.5px;
-}
-.main-header p {
-    color: #c4a8f5;
-    margin: 0.25rem 0 0;
-    font-size: 0.95rem;
-}
-.team-badge {
-    display: inline-block;
-    background: #7D45E0;
-    color: white;
-    padding: 0.15rem 0.75rem;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    margin-bottom: 0.4rem;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, [class*="css"] {
+    font-family: 'Inter', system-ui, sans-serif;
 }
 
-/* Metric cards */
-.metric-card {
-    background: #f8f5ff;
-    border: 1.5px solid #d4b8f5;
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    text-align: center;
-}
-.metric-card .value {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #5c2db3;
-    line-height: 1.1;
-}
-.metric-card .label {
-    font-size: 0.78rem;
-    color: #666;
-    margin-top: 0.2rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+/* ── Colour tokens ── */
+:root {
+    --brand-900: #0f0320;
+    --brand-800: #1a0533;
+    --brand-700: #240b44;
+    --brand-600: #3b1270;
+    --brand-500: #5c2db3;
+    --brand-400: #7D45E0;
+    --brand-300: #a57fee;
+    --brand-200: #d4b8f5;
+    --brand-100: #ede5fb;
+    --brand-50:  #f8f5ff;
+
+    --success:   #16a34a;
+    --warning:   #d97706;
+    --danger:    #dc2626;
+    --neutral-900: #111827;
+    --neutral-600: #4b5563;
+    --neutral-400: #9ca3af;
+    --neutral-200: #e5e7eb;
+    --neutral-50:  #f9fafb;
+
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    --shadow-md: 0 4px 12px rgba(93,45,179,.12), 0 2px 6px rgba(0,0,0,.06);
+    --shadow-lg: 0 8px 32px rgba(93,45,179,.18), 0 4px 12px rgba(0,0,0,.08);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
 }
 
-/* Stage progress */
-.stage-done   { color: #16a34a; font-weight: 600; }
-.stage-run    { color: #7D45E0; font-weight: 600; }
-.stage-wait   { color: #9ca3af; }
+/* ── Hide Streamlit chrome ── */
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding-top: 1.5rem !important; max-width: 1400px !important; }
 
-/* Strategy badge */
-.best-badge {
-    background: #7D45E0;
-    color: white;
-    padding: 0.2rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.82rem;
-    font-weight: 700;
-}
-
-/* Section headings */
-.section-title {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: #1a0533;
-    border-left: 4px solid #7D45E0;
-    padding-left: 0.6rem;
-    margin: 1.2rem 0 0.6rem;
-}
-
-/* Filter box */
-.filter-summary {
-    background: #fdf8ff;
-    border: 1px solid #e2d3f5;
-    border-radius: 8px;
-    padding: 0.8rem 1rem;
-    font-size: 0.88rem;
-}
-
-/* Sidebar */
+/* ══════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════ */
 section[data-testid="stSidebar"] {
-    background: #1a0533;
+    background: linear-gradient(180deg, var(--brand-900) 0%, var(--brand-800) 100%);
+    border-right: 1px solid var(--brand-700);
 }
-section[data-testid="stSidebar"] .stMarkdown, 
+section[data-testid="stSidebar"] > div { padding: 1.25rem 1rem; }
+
+section[data-testid="stSidebar"] .stMarkdown p,
 section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] p {
-    color: #e8d9ff !important;
+section[data-testid="stSidebar"] .stSlider label,
+section[data-testid="stSidebar"] .stTextInput label,
+section[data-testid="stSidebar"] .stToggle label {
+    color: var(--brand-200) !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
 }
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 {
-    color: #ffffff !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+}
+section[data-testid="stSidebar"] .stTextInput input {
+    background: var(--brand-700) !important;
+    border: 1px solid var(--brand-600) !important;
+    color: #fff !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.82rem !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-color: var(--brand-700) !important;
+    margin: 0.75rem 0 !important;
+}
+section[data-testid="stSidebar"] .stMetric {
+    background: var(--brand-700);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.4rem;
+    border: 1px solid var(--brand-600);
+}
+section[data-testid="stSidebar"] .stMetric label { color: var(--brand-300) !important; }
+section[data-testid="stSidebar"] .stMetric [data-testid="stMetricValue"] {
+    color: #fff !important;
+    font-size: 1.1rem !important;
+    font-weight: 800 !important;
+}
+
+/* ══════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════ */
+.app-header {
+    background: linear-gradient(135deg, var(--brand-900) 0%, var(--brand-700) 60%, #2a0d5e 100%);
+    border: 1px solid var(--brand-600);
+    border-radius: var(--radius-lg);
+    padding: 1.6rem 2rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+}
+.app-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 80% 50%, rgba(125,69,224,.18) 0%, transparent 70%);
+    pointer-events: none;
+}
+.app-header-text { flex: 1; min-width: 0; }
+.app-header h1 {
+    color: #fff;
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin: 0 0 0.2rem;
+    letter-spacing: -0.6px;
+    line-height: 1.2;
+}
+.app-header p {
+    color: var(--brand-200);
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 400;
+    line-height: 1.5;
+}
+.team-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--brand-400);
+    color: #fff;
+    padding: 0.2rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════
+   TABS
+══════════════════════════════════════════ */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.25rem;
+    background: var(--brand-50);
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--brand-100);
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: var(--radius-sm) !important;
+    padding: 0.45rem 1.1rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: var(--neutral-600) !important;
+    background: transparent !important;
+    border: none !important;
+    transition: all .15s ease !important;
+}
+.stTabs [aria-selected="true"] {
+    background: #fff !important;
+    color: var(--brand-500) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ══════════════════════════════════════════
+   KPI / METRIC CARDS
+══════════════════════════════════════════ */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+.kpi-card {
+    background: #fff;
+    border: 1.5px solid var(--brand-100);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.1rem;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+.kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.kpi-card .kpi-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--brand-500);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.kpi-card .kpi-label {
+    font-size: 0.72rem;
+    color: var(--neutral-600);
+    margin-top: 0.25rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+.kpi-card.accent { border-color: var(--brand-400); background: var(--brand-50); }
+.kpi-card.accent .kpi-value { color: var(--brand-400); }
+
+/* ══════════════════════════════════════════
+   ACCURACY CARDS
+══════════════════════════════════════════ */
+.acc-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+.acc-card {
+    background: #fff;
+    border-radius: var(--radius-md);
+    padding: 1rem 1.2rem;
+    border: 1.5px solid var(--neutral-200);
+    box-shadow: var(--shadow-sm);
+}
+.acc-card .acc-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--neutral-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.4rem;
+}
+.acc-card .acc-bar-wrap {
+    background: var(--neutral-200);
+    border-radius: 99px;
+    height: 6px;
+    margin: 0.5rem 0 0.35rem;
+    overflow: hidden;
+}
+.acc-card .acc-bar {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--brand-400), var(--brand-300));
+}
+.acc-card .acc-pct {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--brand-500);
+    line-height: 1;
+}
+
+/* ══════════════════════════════════════════
+   SECTION TITLES
+══════════════════════════════════════════ */
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--brand-800);
+    margin: 1.5rem 0 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--brand-100);
+}
+.section-title::before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 1.1em;
+    background: var(--brand-400);
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════
+   BEST STRATEGY BADGE
+══════════════════════════════════════════ */
+.best-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: linear-gradient(135deg, var(--brand-500), var(--brand-400));
+    color: #fff;
+    padding: 0.2rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    vertical-align: middle;
+    box-shadow: 0 2px 8px rgba(125,69,224,.35);
+}
+
+/* ══════════════════════════════════════════
+   FILTER SUMMARY BOX
+══════════════════════════════════════════ */
+.filter-box {
+    background: var(--brand-50);
+    border: 1px solid var(--brand-100);
+    border-left: 4px solid var(--brand-400);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    font-size: 0.84rem;
+    color: var(--neutral-600);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.filter-chip {
+    background: #fff;
+    border: 1px solid var(--brand-200);
+    border-radius: 99px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--brand-500);
+}
+
+/* ══════════════════════════════════════════
+   RUN BUTTON
+══════════════════════════════════════════ */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-400) 100%) !important;
+    border: none !important;
+    border-radius: var(--radius-md) !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+    padding: 0.65rem 1.5rem !important;
+    box-shadow: 0 4px 14px rgba(125,69,224,.4) !important;
+    transition: all .2s ease !important;
+    letter-spacing: 0.2px !important;
+}
+.stButton > button[kind="primary"]:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 20px rgba(125,69,224,.5) !important;
+}
+
+/* ══════════════════════════════════════════
+   DATAFRAME TWEAKS
+══════════════════════════════════════════ */
+[data-testid="stDataFrame"] {
+    border-radius: var(--radius-md) !important;
+    overflow: hidden !important;
+    border: 1px solid var(--brand-100) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ══════════════════════════════════════════
+   SUCCESS / INFO / WARNING
+══════════════════════════════════════════ */
+[data-testid="stSuccess"] {
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: var(--radius-sm) !important;
+    color: var(--success) !important;
+}
+[data-testid="stInfo"] {
+    background: var(--brand-50) !important;
+    border: 1px solid var(--brand-200) !important;
+    border-radius: var(--radius-sm) !important;
+    color: var(--brand-600) !important;
 }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
+
 # =============================================================================
 # SIDEBAR
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("## 🎯 FiguringOut")
-    st.markdown("*Redrob AI Candidate Ranker*")
-    st.markdown("---")
+    # Logo + title
+    if LOGO_B64:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem;">'
+            f"{logo_img_tag(40)}"
+            f'<div><div style="color:#fff;font-weight:800;font-size:1rem;line-height:1.2">FiguringOut</div>'
+            f'<div style="color:var(--brand-300);font-size:0.75rem;margin-top:1px">Redrob Ranker</div></div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("## 🎯 FiguringOut")
+        st.markdown("*Redrob AI Candidate Ranker*")
 
+    st.markdown("---")
     st.markdown("### ⚙️ Configuration")
 
     data_dir = st.text_input(
@@ -191,22 +514,19 @@ with st.sidebar:
         value="./data",
         help="Folder containing golden_test.jsonl, test_set.jsonl, job_description.txt",
     )
-
     models_dir = st.text_input(
         "Models directory",
         value="./models",
         help="Where the XGBoost LambdaMART model is saved",
     )
-
-    top_n = st.slider("Top-N candidates to rank", 10, 120, DEFAULT_TOP_N, step=10)
-
+    top_n = st.slider("Top-N candidates", 10, 120, DEFAULT_TOP_N, step=10)
     as_of_date = st.text_input(
         "As-of date (YYYY-MM-DD)",
         value=DEFAULT_AS_OF_DATE,
         help="Snapshot date for Behavior_Fit recency calculation",
     )
 
-    st.markdown("### 🔧 Pipeline options")
+    st.markdown("### 🔧 Pipeline")
     run_filters = st.toggle("Pre-ranking filters", value=True)
     run_ltr = st.toggle("LambdaMART (LTR)", value=True)
     run_reasoning = st.toggle("Extractive reasoning", value=True)
@@ -222,30 +542,35 @@ with st.sidebar:
         st.metric("Behavior", f"{W_BEHAVIOR:.0%}")
 
     st.markdown("---")
-    st.caption("Weights are fixed in config.py. Edit there to change.")
+    st.caption("Weights are fixed in config.py")
+
 
 # =============================================================================
-# MAIN AREA HEADER
+# MAIN HEADER
 # =============================================================================
 
 st.markdown(
-    """
-<div class="main-header">
-  <span class="team-badge">Team FiguringOut</span>
-  <h1>🎯 Redrob AI Candidate Ranker</h1>
-  <p>Evidence-grounded, CPU-only ranking — score every candidate on Tech / Context / Behavior,
-     rank with three strategies, explain with extractive vector reasoning.</p>
+    f"""
+<div class="app-header">
+  <div style="flex-shrink:0">{wide_logo_tag(52)}</div>
+  <div class="app-header-text">
+    <div class="team-pill">⚡ Team FiguringOut</div>
+    <h1>Redrob AI Candidate Ranker</h1>
+    <p>Evidence-grounded, CPU-only ranking — score every candidate on Tech / Context / Behavior,
+       rank with three strategies, explain with extractive vector reasoning.</p>
+  </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
+
 
 # =============================================================================
 # TABS
 # =============================================================================
 
 tab_run, tab_about, tab_metrics = st.tabs(
-    ["▶ Run Pipeline", "ℹ️ How it works", "📊 Benchmark metrics"]
+    ["▶  Run Pipeline", "ℹ️  How it works", "📊  Benchmark metrics"]
 )
 
 # ---------------------------------------------------------------------------
@@ -254,7 +579,7 @@ tab_run, tab_about, tab_metrics = st.tabs(
 with tab_run:
 
     run_btn = st.button(
-        "🚀 Run Ranking Pipeline", type="primary", use_container_width=True
+        "🚀  Run Ranking Pipeline", type="primary", use_container_width=True
     )
 
     if run_btn:
@@ -270,10 +595,8 @@ with tab_run:
 
             train_records = records
             records_to_rank = records
-
             st.write(
-                f"✅ Loaded **{len(records)}** merged records  "
-                f"(train = {len(train_records)}, rank = {len(records_to_rank)})"
+                f"✅ Loaded **{len(records)}** merged records  (train = {len(train_records)}, rank = {len(records_to_rank)})"
             )
             status.update(label="📂 Data loaded", state="complete")
 
@@ -300,12 +623,14 @@ with tab_run:
                         for k, v in fstats.items()
                         if isinstance(v, list) and v
                     }
-                    st.markdown(
-                        "<div class='filter-summary'>"
-                        + "  ".join(f"<b>{k}</b>: {v}" for k, v in drop_detail.items())
-                        + "</div>",
-                        unsafe_allow_html=True,
+                    chips = " ".join(
+                        f'<span class="filter-chip">{k}: {v}</span>'
+                        for k, v in drop_detail.items()
                     )
+                    st.markdown(
+                        f'<div class="filter-box">{chips}</div>', unsafe_allow_html=True
+                    )
+
                 status.update(
                     label=f"🔍 Filters done — {n_out}/{n_in} passed", state="complete"
                 )
@@ -338,8 +663,7 @@ with tab_run:
             )
             acc_ctx = (pred_context == gt_ctx).mean() * 100
             status.update(
-                label=f"📋 Context_Fit done — accuracy {acc_ctx:.1f}%",
-                state="complete",
+                label=f"📋 Context_Fit done — accuracy {acc_ctx:.1f}%", state="complete"
             )
 
         # ── Stage 4: Behavior_Fit ─────────────────────────────────────────
@@ -363,22 +687,14 @@ with tab_run:
 
         # ── Stage 6: Rank ─────────────────────────────────────────────────
         all_metrics: dict = {}
-
         with st.status("🏆 Stage 6 — Running ranking strategies…") as status:
             ranked_lex = rank_lexicographical(candidates_data)
-            all_metrics["Lex Sort"] = evaluate_ranking(
-                ranked_lex,
-                "Lex Sort",
-            )
+            all_metrics["Lex Sort"] = evaluate_ranking(ranked_lex, "Lex Sort")
 
             ranked_wt = rank_nonlinear_weighted(candidates_data)
-            all_metrics["Weighted"] = evaluate_ranking(
-                ranked_wt,
-                "Weighted",
-            )
+            all_metrics["Weighted"] = evaluate_ranking(ranked_wt, "Weighted")
 
             ranked_ltr = None
-
             if run_ltr:
                 ranked_ltr = rank_lambdamart(
                     train_candidates_data=candidates_data,
@@ -390,16 +706,15 @@ with tab_run:
                     models_dir=models_dir,
                     evaluation=True,
                 )
-
                 ltr_test_cids = {records_to_rank[i]["candidate_id"] for i in idx_te}
-
                 all_metrics["LambdaMART"] = evaluate_ranking(
                     ranked_ltr[ranked_ltr["candidate_id"].isin(ltr_test_cids)].copy(),
                     "LambdaMART",
                 )
+
             best_name = max(all_metrics, key=lambda n: all_metrics[n]["Final Score"])
             status.update(
-                label=f"🏆 Ranking done — best: **{best_name}**", state="complete"
+                label=f"🏆 Ranking done — best: {best_name}", state="complete"
             )
 
         # ── Stage 7: Reasoning ────────────────────────────────────────────
@@ -422,10 +737,8 @@ with tab_run:
                     st.warning(f"Reasoning skipped: {e}")
                 status.update(label="💬 Reasoning done", state="complete")
 
-        # ── Stage 8: Output ───────────────────────────────────────────────
+        # ── Stage 8: Build output df ──────────────────────────────────────
         t_elapsed = time.time() - t_start
-
-        # Normalise score
         out_df = best_df.head(top_n).copy().reset_index(drop=True)
         raw = out_df[score_col].values.astype(float)
         mx = raw.max() if raw.max() > 0 else 1.0
@@ -438,65 +751,69 @@ with tab_run:
 
         # ── KPI cards ─────────────────────────────────────────────────────
         st.markdown(
-            "<div class='section-title'>📊 Results Summary</div>",
-            unsafe_allow_html=True,
+            "<div class='section-title'>Results Summary</div>", unsafe_allow_html=True
         )
 
         m = all_metrics[best_name]
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.markdown(
-            f"<div class='metric-card'><div class='value'>{m['NDCG@10']:.4f}</div>"
-            f"<div class='label'>NDCG@10</div></div>",
-            unsafe_allow_html=True,
-        )
-        k2.markdown(
-            f"<div class='metric-card'><div class='value'>{m['NDCG@50']:.4f}</div>"
-            f"<div class='label'>NDCG@50</div></div>",
-            unsafe_allow_html=True,
-        )
-        k3.markdown(
-            f"<div class='metric-card'><div class='value'>{m['MAP']:.4f}</div>"
-            f"<div class='label'>MAP</div></div>",
-            unsafe_allow_html=True,
-        )
-        k4.markdown(
-            f"<div class='metric-card'><div class='value'>{t_elapsed:.0f}s</div>"
-            f"<div class='label'>Runtime</div></div>",
-            unsafe_allow_html=True,
-        )
-        k5.markdown(
-            f"<div class='metric-card'><div class='value'>{len(out_df)}</div>"
-            f"<div class='label'>Ranked</div></div>",
+        kpi_html = f"""
+        <div class="kpi-grid">
+          <div class="kpi-card accent">
+            <div class="kpi-value">{m['NDCG@10']:.4f}</div>
+            <div class="kpi-label">NDCG@10</div>
+          </div>
+          <div class="kpi-card accent">
+            <div class="kpi-value">{m['NDCG@50']:.4f}</div>
+            <div class="kpi-label">NDCG@50</div>
+          </div>
+          <div class="kpi-card accent">
+            <div class="kpi-value">{m['MAP']:.4f}</div>
+            <div class="kpi-label">MAP</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-value">{t_elapsed:.0f}s</div>
+            <div class="kpi-label">Runtime</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-value">{len(out_df)}</div>
+            <div class="kpi-label">Ranked</div>
+          </div>
+        </div>
+        """
+        st.markdown(kpi_html, unsafe_allow_html=True)
+
+        # ── Accuracy cards ─────────────────────────────────────────────────
+        st.markdown(
+            "<div class='section-title'>Sub-model Accuracy</div>",
             unsafe_allow_html=True,
         )
 
-        # ── Sub-model accuracy row ─────────────────────────────────────────
+        acc_html = f"""
+        <div class="acc-grid">
+          <div class="acc-card">
+            <div class="acc-label">🤖 Tech_Fit · XGBoost</div>
+            <div class="acc-pct">{acc_tech:.1f}%</div>
+            <div class="acc-bar-wrap"><div class="acc-bar" style="width:{acc_tech}%"></div></div>
+          </div>
+          <div class="acc-card">
+            <div class="acc-label">📋 Context_Fit · Logic Tree</div>
+            <div class="acc-pct">{acc_ctx:.1f}%</div>
+            <div class="acc-bar-wrap"><div class="acc-bar" style="width:{acc_ctx}%"></div></div>
+          </div>
+          <div class="acc-card">
+            <div class="acc-label">📡 Behavior_Fit · Formula</div>
+            <div class="acc-pct">{acc_beh:.1f}%</div>
+            <div class="acc-bar-wrap"><div class="acc-bar" style="width:{acc_beh}%"></div></div>
+          </div>
+        </div>
+        """
+        st.markdown(acc_html, unsafe_allow_html=True)
+
+        # ── Strategy comparison ────────────────────────────────────────────
         st.markdown(
-            "<div class='section-title'>🎯 Sub-model Accuracy</div>",
-            unsafe_allow_html=True,
-        )
-        a1, a2, a3 = st.columns(3)
-        a1.markdown(
-            f"<div class='metric-card'><div class='value'>{acc_tech:.1f}%</div>"
-            f"<div class='label'>Tech_Fit (XGBoost)</div></div>",
-            unsafe_allow_html=True,
-        )
-        a2.markdown(
-            f"<div class='metric-card'><div class='value'>{acc_ctx:.1f}%</div>"
-            f"<div class='label'>Context_Fit (Logic Tree)</div></div>",
-            unsafe_allow_html=True,
-        )
-        a3.markdown(
-            f"<div class='metric-card'><div class='value'>{acc_beh:.1f}%</div>"
-            f"<div class='label'>Behavior_Fit (Formula)</div></div>",
+            "<div class='section-title'>Strategy Comparison</div>",
             unsafe_allow_html=True,
         )
 
-        # ── Strategy comparison table ──────────────────────────────────────
-        st.markdown(
-            "<div class='section-title'>⚔️ Strategy Comparison</div>",
-            unsafe_allow_html=True,
-        )
         comparison_rows = []
         for strat, met in all_metrics.items():
             comparison_rows.append(
@@ -516,10 +833,10 @@ with tab_run:
             use_container_width=True,
         )
 
-        # ── Ranked candidates table ────────────────────────────────────────
+        # ── Ranked table ──────────────────────────────────────────────────
         st.markdown(
-            f"<div class='section-title'>🥇 Top-{top_n} Ranked Candidates "
-            f"<span class='best-badge'>{best_name}</span></div>",
+            f'<div class="section-title">Top-{top_n} Ranked Candidates '
+            f'<span class="best-badge">⭐ {best_name}</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -564,7 +881,6 @@ with tab_run:
         )
 
     else:
-        # Landing state
         st.info(
             "👈 Configure settings in the sidebar, then click **Run Ranking Pipeline**.",
             icon="ℹ️",
@@ -607,7 +923,6 @@ with tab_about:
 
     st.markdown("---")
     st.markdown("## 🏗️ Three-axis scoring model")
-
     col_t, col_c, col_b = st.columns(3)
     with col_t:
         st.markdown("### 🤖 Tech_Fit (0–4)")
@@ -627,7 +942,7 @@ XGBoost classifies into tiers 0–4.
         st.markdown("""
 **Deterministic logic tree**
 
-Reads structured `career_history` fields directly — no LLM extraction needed.
+Reads structured `career_history` fields directly.
 
 Rules: product-company months, YOE band, consulting flag, tenure stability, relocation.
 
@@ -663,19 +978,19 @@ Formula: recency × response_rate, capped by notice period and open-to-work flag
     st.markdown("""
 | Stage | What it catches |
 |---|---|
-| **1A – Structural** | Non-India + no relocation, YOE out of range, sparse skills, honeypot (expert skill / 0 months used), pure consulting, job-hopper |
+| **1A – Structural** | Non-India + no relocation, YOE out of range, sparse skills, honeypot, pure consulting, job-hopper |
 | **2 – Title keyword pruning** | Marketing, Sales, HR, Finance, Civil Engineer … |
 | **3 – Behavioural reachability** | Inactive > 180 days OR recruiter response rate < 10% |
-| **4 – Domain relevance** | Must match ≥ 2 of 6 AI/ML/Search keyword groups in skills + career descriptions |
+| **4 – Domain relevance** | Must match ≥ 2 of 6 AI/ML/Search keyword groups |
     """)
 
     st.markdown("---")
     st.markdown("## 💬 Extractive reasoning (no hallucination)")
     st.markdown("""
-For each ranked candidate the app finds the single sentence from their profile
-most aligned with the JD — using cosine similarity between sentence embeddings
-and the JD embedding. The sentence is always quoted verbatim from the candidate's
-own text, so fabricated credentials are architecturally impossible.
+For each ranked candidate the app finds the single sentence from their profile most aligned
+with the JD — using cosine similarity between sentence embeddings and the JD embedding.
+The sentence is always quoted verbatim from the candidate's own text, so fabricated credentials
+are architecturally impossible.
 
 **Format:**  
 `"Senior ML Engineer (7y): Built semantic search pipeline serving 3M queries/day. [Bengaluru-based; notice 30d]"`
@@ -707,26 +1022,23 @@ with tab_metrics:
     }
     bench_df = pd.DataFrame(bench).set_index("Metric")
     st.dataframe(
-        bench_df.style.highlight_max(axis=1, color="#d4b8f5"), use_container_width=True
+        bench_df.style.highlight_max(axis=1, color="#d4b8f5"),
+        use_container_width=True,
     )
 
     st.markdown("---")
     st.markdown("## ⏱️ Runtime")
-
     r1, r2, r3 = st.columns(3)
     r1.markdown(
-        "<div class='metric-card'><div class='value'>31.9s</div>"
-        "<div class='label'>120 candidates</div></div>",
+        "<div class='kpi-card'><div class='kpi-value'>31.9s</div><div class='kpi-label'>120 candidates</div></div>",
         unsafe_allow_html=True,
     )
     r2.markdown(
-        "<div class='metric-card'><div class='value'>~246s</div>"
-        "<div class='label'>1 lakh candidates</div></div>",
+        "<div class='kpi-card'><div class='kpi-value'>~246s</div><div class='kpi-label'>1 lakh candidates</div></div>",
         unsafe_allow_html=True,
     )
     r3.markdown(
-        "<div class='metric-card'><div class='value'>CPU only</div>"
-        "<div class='label'>No GPU needed</div></div>",
+        "<div class='kpi-card'><div class='kpi-value'>CPU only</div><div class='kpi-label'>No GPU needed</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -748,8 +1060,7 @@ with tab_metrics:
     ).set_index("Feature")
     st.bar_chart(feat_imp, use_container_width=True)
     st.caption(
-        "Tech_Fit dominates (62.5%) — the model independently confirms that "
-        "semantic career-narrative fit is the primary hiring signal."
+        "Tech_Fit dominates (62.5%) — the model independently confirms that semantic career-narrative fit is the primary hiring signal."
     )
 
     st.markdown("---")
